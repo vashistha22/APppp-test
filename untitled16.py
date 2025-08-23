@@ -43,20 +43,33 @@ if st.sidebar.button("Run Analysis"):
     # ------------------------
     # 1. Download Data
     # ------------------------
-   data = yf.download(tickers, start=start, end=end)
+    data = yf.download(tickers, start=start, end=end)
+
+    # If Yahoo returns nothing
+        if data.empty:
+            st.error("❌ No data found for selected tickers. Try different symbols or dates.")
+            st.stop()
 
     # Handle MultiIndex (multiple tickers) vs single ticker
         if isinstance(data.columns, pd.MultiIndex):
+    # Prefer "Adj Close", fallback to "Close"
             if "Adj Close" in data.columns.levels[0]:
                 prices = data["Adj Close"]
-            else:
+            elif "Close" in data.columns.levels[0]:
                 prices = data["Close"]
+            else:
+                st.error("❌ Neither 'Adj Close' nor 'Close' found in data.")
+                st.stop()
         else:
             if "Adj Close" in data.columns:
                 prices = data[["Adj Close"]].rename(columns={"Adj Close": tickers[0]})
-            else:
+            elif "Close" in data.columns:
                 prices = data[["Close"]].rename(columns={"Close": tickers[0]})
+            else:
+                st.error("❌ Neither 'Adj Close' nor 'Close' found in data.")
+                st.stop()
 
+    # Clean missing values
     prices = prices.ffill().bfill()
 
     prices = prices.ffill().bfill()
