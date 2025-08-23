@@ -43,12 +43,21 @@ if st.sidebar.button("Run Analysis"):
     # ------------------------
     # 1. Download Data
     # ------------------------
-    data = yf.download(tickers, start=start, end=end)
+   data = yf.download(tickers, start=start, end=end)
 
+    # Handle MultiIndex (multiple tickers) vs single ticker
         if isinstance(data.columns, pd.MultiIndex):
-            prices = data["Adj Close"]
+            if "Adj Close" in data.columns.levels[0]:
+                prices = data["Adj Close"]
+            else:
+                prices = data["Close"]
         else:
-            prices = data[["Adj Close"]].rename(columns={"Adj Close": tickers[0]})
+            if "Adj Close" in data.columns:
+                prices = data[["Adj Close"]].rename(columns={"Adj Close": tickers[0]})
+            else:
+                prices = data[["Close"]].rename(columns={"Close": tickers[0]})
+
+    prices = prices.ffill().bfill()
 
     prices = prices.ffill().bfill()
     st.subheader("📊 Raw Price Data")
