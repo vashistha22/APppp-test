@@ -121,4 +121,4 @@ if st.sidebar.button("Run Analysis"):
     cum_df = pd.concat([cum_eq.rename("EqualWeight"), cum_sharpe.rename("MaxSharpe")], axis=1)
     fig2 = px.line(cum_df, title="Portfolio Growth of $1")
     st.plotly_chart(fig2, use_container_width=True)
-th=True)
+
