@@ -8,25 +8,117 @@ Original file is located at
 """
 
 import streamlit as st
-import yfinance as yf
 import pandas as pd
-import plotly.express as px
+import numpy as np
+import yfinance as yf
 import ta
+import plotly.express as px
+import xgboost as xgb
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score, roc_auc_score
+from pypfopt.expected_returns import mean_historical_return
+from pypfopt.risk_models import CovarianceShrinkage
+from pypfopt.efficient_frontier import EfficientFrontier, EfficientCVaR
 
+st.set_page_config(page_title="MLQuant Dashboard", layout="wide")
 st.title("📈 Stock Return Forecasting & Portfolio Optimization")
 
-# Download stock data
-df = yf.download("AAPL", start="2020-01-01", end="2023-01-01")
-df["Returns"] = df["Close"].pct_change()
-df["RSI"] = ta.momentum.RSIIndicator(df["Close"], window=14).rsi()
+# ------------------------
+# Sidebar Inputs
+# ------------------------
+tickers = st.sidebar.multiselect("Select stocks", 
+    ["AAPL", "MSFT", "GOOG", "AMZN", "META", "TSLA", "NVDA"], 
+    default=["AAPL","MSFT","GOOG"])
+start = st.sidebar.date_input("Start date", pd.to_datetime("2018-01-01"))
+end = st.sidebar.date_input("End date", pd.to_datetime("2025-01-01"))
 
-st.subheader("Raw Stock Data")
-st.dataframe(df.tail())
+if st.sidebar.button("Run Analysis"):
+    # ------------------------
+    # 1. Download Data
+    # ------------------------
+    prices = yf.download(tickers, start=start, end=end)["Adj Close"].ffill().bfill()
+    st.subheader("Raw Price Data")
+    st.dataframe(prices.tail())
 
-st.subheader("Stock Price Trend")
-fig = px.line(df, x=df.index, y="Close", title="Stock Closing Price")
-st.plotly_chart(fig, use_container_width=True)
+    # ------------------------
+    # 2. Feature Engineering
+    # ------------------------
+    feat_list = []
+    for t in tickers:
+        df = pd.DataFrame({"Close": prices[t]})
+        df["RSI"] = ta.momentum.RSIIndicator(df["Close"], window=14).rsi()
+        df["MACD"] = ta.trend.MACD(df["Close"]).macd()
+        df["Volatility"] = df["Close"].pct_change().rolling(21).std()
+        df["NextRet"] = df["Close"].pct_change().shift(-1)
+        df["Ticker"] = t
+        feat_list.append(df)
+    features = pd.concat(feat_list).dropna()
+    features["Up"] = (features["NextRet"] > 0).astype(int)
 
-st.subheader("RSI Trend")
-fig2 = px.line(df, x=df.index, y="RSI", title="RSI Trend")
-st.plotly_chart(fig2, use_container_width=True)
+    # ------------------------
+    # 3. Train/Test ML Model (XGBoost)
+    # ------------------------
+    X = features[["RSI", "MACD", "Volatility"]]
+    y = features["Up"]
+    X_train, X_test, y_train, y_test = train_test_split(X, y, shuffle=False, test_size=0.2)
+
+    model = xgb.XGBClassifier(n_estimators=200, learning_rate=0.05, max_depth=5)
+    model.fit(X_train, y_train)
+    y_pred = model.predict(X_test)
+    y_proba = model.predict_proba(X_test)[:,1]
+
+    acc = accuracy_score(y_test, y_pred)
+    auc = roc_auc_score(y_test, y_proba)
+    st.subheader("📊 ML Model Performance")
+    st.write(f"Accuracy: **{acc:.2f}**, AUC: **{auc:.2f}**")
+
+    # ML signals for last day
+    last_feats = features.groupby("Ticker").tail(1).set_index("Ticker")
+    last_feats["ProbUp"] = model.predict_proba(last_feats[["RSI","MACD","Volatility"]])[:,1]
+    st.subheader("🔮 Latest ML Prob(Up) by Ticker")
+    st.bar_chart(last_feats["ProbUp"])
+
+    # ------------------------
+    # 4. Portfolio Optimization
+    # ------------------------
+    mu = mean_historical_return(prices)
+    S = CovarianceShrinkage(prices).ledoit_wolf()
+
+    # Max Sharpe
+    ef = EfficientFrontier(mu, S)
+    w_sharpe = ef.max_sharpe()
+    sharpe_weights = ef.clean_weights()
+
+    # CVaR on top ML tickers
+    top_tickers = list(last_feats["ProbUp"].sort_values(ascending=False).head(3).index)
+    mu_sub = mean_historical_return(prices[top_tickers])
+    ret_subset = prices[top_tickers].pct_change().dropna()
+    ef_cvar = EfficientCVaR(mu_sub, ret_subset)
+    w_cvar = ef_cvar.min_cvar()
+    cvar_weights = ef_cvar.clean_weights()
+
+    st.subheader("📈 Portfolio Weights")
+    col1, col2 = st.columns(2)
+    with col1:
+        st.write("**Max Sharpe Portfolio**")
+        st.json(sharpe_weights)
+    with col2:
+        st.write(f"**Min CVaR Portfolio** (Top 3 ML tickers: {top_tickers})")
+        st.json(cvar_weights)
+
+    # ------------------------
+    # 5. Charts
+    # ------------------------
+    st.subheader("Stock Price Trends")
+    fig = px.line(prices, title="Stock Prices")
+    st.plotly_chart(fig, use_container_width=True)
+
+    st.subheader("Cumulative Return (Equal vs Max Sharpe)")
+    eq_w = np.repeat(1/len(tickers), len(tickers))
+    cum_eq = (1 + (prices.pct_change().dropna() * eq_w).sum(axis=1)).cumprod()
+    w_vec = pd.Series(sharpe_weights).reindex(prices.columns).fillna(0).values
+    cum_sharpe = (1 + (prices.pct_change().dropna() * w_vec).sum(axis=1)).cumprod()
+    cum_df = pd.concat([cum_eq.rename("EqualWeight"), cum_sharpe.rename("MaxSharpe")], axis=1)
+    fig2 = px.line(cum_df, title="Portfolio Growth of $1")
+    st.plotly_chart(fig2, use_container_width=True)
+th=True)
