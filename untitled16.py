@@ -7,6 +7,7 @@ Original file is located at
     https://colab.research.google.com/drive/1awqTxDwP-UZ6IoaNCBYiqgEju6WcnEle
 """
 
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -18,26 +19,33 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, roc_auc_score
 from pypfopt.expected_returns import mean_historical_return
 from pypfopt.risk_models import CovarianceShrinkage
-from pypfopt.cvar import EfficientCVaR
+from pypfopt.efficient_frontier import EfficientFrontier
+from pypfopt.cvar import EfficientCVaR   # ✅ Correct import
 
+# ------------------------
+# Streamlit App Layout
+# ------------------------
 st.set_page_config(page_title="MLQuant Dashboard", layout="wide")
 st.title("📈 Stock Return Forecasting & Portfolio Optimization")
 
 # ------------------------
 # Sidebar Inputs
 # ------------------------
-tickers = st.sidebar.multiselect("Select stocks", 
-    ["AAPL", "MSFT", "GOOG", "AMZN", "META", "TSLA", "NVDA"], 
-    default=["AAPL","MSFT","GOOG"])
+tickers = st.sidebar.multiselect(
+    "Select stocks",
+    ["AAPL", "MSFT", "GOOG", "AMZN", "META", "TSLA", "NVDA"],
+    default=["AAPL", "MSFT", "GOOG"]
+)
 start = st.sidebar.date_input("Start date", pd.to_datetime("2018-01-01"))
 end = st.sidebar.date_input("End date", pd.to_datetime("2025-01-01"))
 
 if st.sidebar.button("Run Analysis"):
+
     # ------------------------
     # 1. Download Data
     # ------------------------
     prices = yf.download(tickers, start=start, end=end)["Adj Close"].ffill().bfill()
-    st.subheader("Raw Price Data")
+    st.subheader("📊 Raw Price Data")
     st.dataframe(prices.tail())
 
     # ------------------------
@@ -52,29 +60,31 @@ if st.sidebar.button("Run Analysis"):
         df["NextRet"] = df["Close"].pct_change().shift(-1)
         df["Ticker"] = t
         feat_list.append(df)
+
     features = pd.concat(feat_list).dropna()
     features["Up"] = (features["NextRet"] > 0).astype(int)
 
     # ------------------------
-    # 3. Train/Test ML Model (XGBoost)
+    # 3. ML Model (XGBoost)
     # ------------------------
     X = features[["RSI", "MACD", "Volatility"]]
     y = features["Up"]
-    X_train, X_test, y_train, y_test = train_test_split(X, y, shuffle=False, test_size=0.2)
 
+    X_train, X_test, y_train, y_test = train_test_split(X, y, shuffle=False, test_size=0.2)
     model = xgb.XGBClassifier(n_estimators=200, learning_rate=0.05, max_depth=5)
     model.fit(X_train, y_train)
+
     y_pred = model.predict(X_test)
-    y_proba = model.predict_proba(X_test)[:,1]
+    y_proba = model.predict_proba(X_test)[:, 1]
 
     acc = accuracy_score(y_test, y_pred)
     auc = roc_auc_score(y_test, y_proba)
-    st.subheader("📊 ML Model Performance")
+    st.subheader("🤖 ML Model Performance")
     st.write(f"Accuracy: **{acc:.2f}**, AUC: **{auc:.2f}**")
 
-    # ML signals for last day
+    # Latest predictions
     last_feats = features.groupby("Ticker").tail(1).set_index("Ticker")
-    last_feats["ProbUp"] = model.predict_proba(last_feats[["RSI","MACD","Volatility"]])[:,1]
+    last_feats["ProbUp"] = model.predict_proba(last_feats[["RSI", "MACD", "Volatility"]])[:, 1]
     st.subheader("🔮 Latest ML Prob(Up) by Ticker")
     st.bar_chart(last_feats["ProbUp"])
 
@@ -89,7 +99,7 @@ if st.sidebar.button("Run Analysis"):
     w_sharpe = ef.max_sharpe()
     sharpe_weights = ef.clean_weights()
 
-    # CVaR on top ML tickers
+    # CVaR Optimization on top ML tickers
     top_tickers = list(last_feats["ProbUp"].sort_values(ascending=False).head(3).index)
     mu_sub = mean_historical_return(prices[top_tickers])
     ret_subset = prices[top_tickers].pct_change().dropna()
@@ -109,16 +119,18 @@ if st.sidebar.button("Run Analysis"):
     # ------------------------
     # 5. Charts
     # ------------------------
-    st.subheader("Stock Price Trends")
+    st.subheader("📉 Stock Price Trends")
     fig = px.line(prices, title="Stock Prices")
     st.plotly_chart(fig, use_container_width=True)
 
-    st.subheader("Cumulative Return (Equal vs Max Sharpe)")
+    st.subheader("💰 Portfolio Growth: Equal vs Max Sharpe")
     eq_w = np.repeat(1/len(tickers), len(tickers))
     cum_eq = (1 + (prices.pct_change().dropna() * eq_w).sum(axis=1)).cumprod()
     w_vec = pd.Series(sharpe_weights).reindex(prices.columns).fillna(0).values
     cum_sharpe = (1 + (prices.pct_change().dropna() * w_vec).sum(axis=1)).cumprod()
     cum_df = pd.concat([cum_eq.rename("EqualWeight"), cum_sharpe.rename("MaxSharpe")], axis=1)
+
     fig2 = px.line(cum_df, title="Portfolio Growth of $1")
     st.plotly_chart(fig2, use_container_width=True)
+
 
