@@ -20,7 +20,6 @@ from sklearn.metrics import accuracy_score, roc_auc_score
 from pypfopt.expected_returns import mean_historical_return
 from pypfopt.risk_models import CovarianceShrinkage
 from pypfopt.efficient_frontier import EfficientFrontier
-from pypfopt.cvar import EfficientCVaR   # ✅ Correct import
 
 # ------------------------
 # Streamlit App Layout
@@ -89,32 +88,17 @@ if st.sidebar.button("Run Analysis"):
     st.bar_chart(last_feats["ProbUp"])
 
     # ------------------------
-    # 4. Portfolio Optimization
+    # 4. Portfolio Optimization (Max Sharpe only)
     # ------------------------
     mu = mean_historical_return(prices)
     S = CovarianceShrinkage(prices).ledoit_wolf()
 
-    # Max Sharpe
     ef = EfficientFrontier(mu, S)
     w_sharpe = ef.max_sharpe()
     sharpe_weights = ef.clean_weights()
 
-    # CVaR Optimization on top ML tickers
-    top_tickers = list(last_feats["ProbUp"].sort_values(ascending=False).head(3).index)
-    mu_sub = mean_historical_return(prices[top_tickers])
-    ret_subset = prices[top_tickers].pct_change().dropna()
-    ef_cvar = EfficientCVaR(mu_sub, ret_subset)
-    w_cvar = ef_cvar.min_cvar()
-    cvar_weights = ef_cvar.clean_weights()
-
-    st.subheader("📈 Portfolio Weights")
-    col1, col2 = st.columns(2)
-    with col1:
-        st.write("**Max Sharpe Portfolio**")
-        st.json(sharpe_weights)
-    with col2:
-        st.write(f"**Min CVaR Portfolio** (Top 3 ML tickers: {top_tickers})")
-        st.json(cvar_weights)
+    st.subheader("📈 Max Sharpe Portfolio Weights")
+    st.json(sharpe_weights)
 
     # ------------------------
     # 5. Charts
@@ -132,5 +116,3 @@ if st.sidebar.button("Run Analysis"):
 
     fig2 = px.line(cum_df, title="Portfolio Growth of $1")
     st.plotly_chart(fig2, use_container_width=True)
-
-
