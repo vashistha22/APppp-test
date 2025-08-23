@@ -18,7 +18,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, roc_auc_score
 from pypfopt.expected_returns import mean_historical_return
 from pypfopt.risk_models import CovarianceShrinkage
-from pypfopt.efficient_frontier import EfficientFrontier, EfficientCVaR
+from pypfopt.cvar import EfficientCVaR
 
 st.set_page_config(page_title="MLQuant Dashboard", layout="wide")
 st.title("📈 Stock Return Forecasting & Portfolio Optimization")
