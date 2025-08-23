@@ -6,5 +6,4 @@ plotly
 xgboost
 scikit-learn
 ta
-PyPortfolioOpt==1.6.1
-
+PyPortfolioOpt>=1.6.0
