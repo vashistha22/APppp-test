@@ -43,7 +43,14 @@ if st.sidebar.button("Run Analysis"):
     # ------------------------
     # 1. Download Data
     # ------------------------
-    prices = yf.download(tickers, start=start, end=end)["Adj Close"].ffill().bfill()
+    data = yf.download(tickers, start=start, end=end)
+
+        if isinstance(data.columns, pd.MultiIndex):
+            prices = data["Adj Close"]
+        else:
+            prices = data[["Adj Close"]].rename(columns={"Adj Close": tickers[0]})
+
+    prices = prices.ffill().bfill()
     st.subheader("📊 Raw Price Data")
     st.dataframe(prices.tail())
 
