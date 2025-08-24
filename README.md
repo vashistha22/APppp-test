@@ -57,4 +57,4 @@ The goal is to enhance investment decisions through predictive modeling and risk
 ## 👤 Author  
 **Vashistha Pankaj**  
 - Email: *vashistha22@iitk.ac.in*  
-- LinkedIn: *[(https://www.linkedin.com/in/vashistha021/)]*  
+- LinkedIn: *https://www.linkedin.com/in/vashistha021/*  
